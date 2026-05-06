@@ -1,0 +1,43 @@
+services:
+  ai-navigation-service:
+    build:
+      context: ./ai-navigation-service
+    container_name: mospli-ai-navigation-service
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      EMBEDDING_BASE_URL: http://llama-embedding-server:8080
+      EMBEDDING_MODEL: qwen3-embedding-q5-k-m
+      EMBEDDING_MOCK: "false"
+      ALLOW_EMBEDDING_FALLBACK: "false"
+      VECTOR_WEIGHT: 0.7
+      KEYWORD_WEIGHT: 0.3
+      PRIORITY_WEIGHT: 0.05
+      T_REDIRECT: 0.82
+      T_GAP: 0.08
+      T_SUGGEST: 0.62
+      SUGGESTIONS_COUNT: 5
+    depends_on:
+      llama-embedding-server:
+        condition: service_started
+    restart: unless-stopped
+
+  llama-embedding-server:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: mospli-llama-embedding-server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/models:ro
+    command:
+      - "-m"
+      - "/models/qwen3-embedding-4b-q5_k_m.gguf"
+      - "--embedding"
+      - "-ub"
+      - "8192"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+    restart: unless-stopped

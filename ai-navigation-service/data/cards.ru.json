@@ -1,0 +1,98 @@
+[
+  {
+    "id": "login",
+    "url": "/",
+    "title": "Вход в систему",
+    "breadcrumbs": "Авторизация > Вход",
+    "description": "Страница входа пользователя в MOSPOLI_LMS по email и паролю.",
+    "aliases": ["войти", "авторизация", "логин", "страница входа", "зайти в систему", "как войти в лмс"],
+    "keywords": ["email", "пароль", "аккаунт", "вход", "login", "лмс"],
+    "priority": 1,
+    "is_active": true,
+    "roles": ["guest", "student", "teacher", "admin"]
+  },
+  {
+    "id": "register",
+    "url": "/register",
+    "title": "Регистрация",
+    "breadcrumbs": "Авторизация > Регистрация",
+    "description": "Создание нового аккаунта пользователя MOSPOLI_LMS.",
+    "aliases": ["регистрация", "зарегистрироваться", "создать аккаунт", "новый пользователь", "регистрация студента"],
+    "keywords": ["имя", "email", "пароль", "аккаунт", "register"],
+    "priority": 1,
+    "is_active": true,
+    "roles": ["guest"]
+  },
+  {
+    "id": "dashboard",
+    "url": "/dashboard",
+    "title": "Личный кабинет",
+    "breadcrumbs": "LMS > Личный кабинет",
+    "description": "Главная страница пользователя после входа с краткой сводкой по обучению.",
+    "aliases": ["личный кабинет", "главная", "дашборд", "панель", "мой кабинет"],
+    "keywords": ["dashboard", "сводка", "обучение", "аккаунт", "лмс"],
+    "priority": 1,
+    "is_active": true,
+    "roles": ["student", "teacher", "admin"]
+  },
+  {
+    "id": "courses",
+    "url": "/courses",
+    "title": "Мои курсы",
+    "breadcrumbs": "LMS > Курсы",
+    "description": "Раздел со списком учебных курсов, дисциплин и предметов пользователя.",
+    "aliases": ["мои курсы", "курсы", "предметы", "дисциплины", "где посмотреть предметы"],
+    "keywords": ["курс", "курсы", "предмет", "дисциплина", "обучение"],
+    "priority": 0.8,
+    "is_active": true,
+    "roles": ["student", "teacher", "admin"]
+  },
+  {
+    "id": "assignments",
+    "url": "/assignments",
+    "title": "Задания",
+    "breadcrumbs": "LMS > Задания",
+    "description": "Раздел с домашними заданиями, учебными работами и сроками сдачи.",
+    "aliases": ["задания", "домашка", "домашние задания", "что нужно сдать", "работы"],
+    "keywords": ["задание", "дедлайн", "сдать", "работа", "домашнее"],
+    "priority": 0.8,
+    "is_active": true,
+    "roles": ["student", "teacher"]
+  },
+  {
+    "id": "grades",
+    "url": "/grades",
+    "title": "Оценки",
+    "breadcrumbs": "LMS > Оценки",
+    "description": "Раздел с оценками, баллами и прогрессом обучения.",
+    "aliases": ["оценки", "баллы", "успеваемость", "прогресс", "мои оценки"],
+    "keywords": ["оценка", "балл", "баллы", "прогресс", "успеваемость"],
+    "priority": 0.8,
+    "is_active": true,
+    "roles": ["student", "teacher", "admin"]
+  },
+  {
+    "id": "profile",
+    "url": "/profile",
+    "title": "Профиль пользователя",
+    "breadcrumbs": "LMS > Профиль",
+    "description": "Раздел профиля пользователя, личных данных и настроек аккаунта.",
+    "aliases": ["профиль", "мой профиль", "настройки аккаунта", "личные данные"],
+    "keywords": ["профиль", "аккаунт", "настройки", "данные", "пользователь"],
+    "priority": 0.7,
+    "is_active": true,
+    "roles": ["student", "teacher", "admin"]
+  },
+  {
+    "id": "help",
+    "url": "/help",
+    "title": "Помощь",
+    "breadcrumbs": "LMS > Помощь",
+    "description": "Раздел помощи по работе с LMS и ответами на частые вопросы.",
+    "aliases": ["помощь", "поддержка", "как пользоваться", "faq", "вопросы"],
+    "keywords": ["помощь", "поддержка", "инструкция", "вопрос", "faq"],
+    "priority": 0.6,
+    "is_active": true,
+    "roles": ["guest", "student", "teacher", "admin"]
+  }
+]
