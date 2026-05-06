@@ -1,322 +1,220 @@
-# MOSPOLI LMS AI Navigation: Infrastructure and Search Algorithm
+# AI-навигация MOSPOLI LMS: инфраструктура и алгоритм
 
-This document describes the current AI navigation-search infrastructure, deployment variants, involved models, filters, scoring stages, and frontend integration.
+Документ коротко показывает, как сайт общается с AI-сервисом, где живёт модель, какие фильтры участвуют в поиске и как принимается решение: перейти сразу, показать подсказки или вернуть fallback.
 
-## 1. High-level production architecture
+## 1. Общая production-схема
 
 ```mermaid
 flowchart LR
-    U[User in Browser] --> F[MOSPOLI LMS Frontend]
-    F -->|same-origin fetch('/api/navigation-search')| N[LMS Web Server / Nginx]
-    N -->|proxy_pass| A[AI Navigation Service :3001]
-    A -->|HTTP embeddings request| L[llama.cpp Embedding Server :8080]
-    L --> M[(Qwen3-Embedding-4B GGUF Q5_K_M)]
-
-    subgraph LMS_Server[Main LMS server]
-        F
-        N
-    end
-
-    subgraph AI_Runtime[AI infrastructure: VM / Vast.ai / QEMU]
-        A
-        L
-        M
-    end
-
-    A --> C[(cards.ru.json)]
-    A --> I[(in-memory vector index)]
+    user[Пользователь] --> site[Сайт MOSPOLI LMS]
+    site --> proxy[Прокси сайта: /api/navigation-search]
+    proxy --> api[AI Navigation Service]
+    api --> llama[llama.cpp embeddings]
+    llama --> model[Qwen3 Embedding 4B Q5_K_M]
+    api --> cards[Карточки разделов cards.ru.json]
 ```
 
-The browser does not know where the AI infrastructure is deployed. It calls only the LMS domain. The LMS server proxies `/api/navigation-search` to the AI upstream.
+Главная идея простая: браузер не знает, где находится AI-сервер. Он отправляет запрос на свой же домен по адресу `/api/navigation-search`, а сервер сайта проксирует этот запрос на AI-инфраструктуру.
 
-## 2. Local portable QEMU architecture
+## 2. Локальная схема через portable QEMU
 
 ```mermaid
 flowchart TB
-    B[Windows host] -->|http://localhost:5173| Vite[Vite dev server]
-    B -->|http://localhost:3001| PF3001[QEMU port forward 3001]
-    B -->|ssh -p 2222| PF2222[QEMU port forward 2222]
-
-    subgraph Repo[MOSPOLI_LMS repository]
-        QEMU[qemu/bin/qemu-system-x86_64.exe]
-        Disk[(qemu/images/mospli-ai.qcow2)]
-        Model[(models/qwen3-embedding-4b-q5_k_m.gguf)]
-        Compose[docker-compose.ai.yml]
-    end
-
-    QEMU --> VM[Ubuntu Linux VM]
-    Disk --> VM
-    PF2222 --> VM
-    PF3001 --> VM
-
-    subgraph VM[Portable Ubuntu VM]
-        Docker[Docker Engine + Compose]
-        Docker --> AIS[ai-navigation-service container]
-        Docker --> LLAMA[llama.cpp server container]
-        LLAMA --> ModelMount[/models mount/]
-    end
-
-    AIS -->|http://llama-embedding-server:8080/v1/embeddings| LLAMA
-    Model --> ModelMount
+    win[Windows host] --> vite[Vite сайт: localhost:5173]
+    win --> qemu[Portable QEMU VM]
+    qemu --> docker[Docker внутри VM]
+    docker --> api[ai-navigation-service]
+    docker --> llama[llama.cpp server]
+    llama --> model[GGUF модель Q5_K_M]
+    api --> llama
 ```
 
-Local QEMU is useful for development and demonstrations without Docker Desktop on Windows. Docker runs inside the VM.
+Такой вариант нужен для локального запуска без Docker Desktop. QEMU лежит в папке проекта, Docker установлен внутри Linux VM, а модель хранится в `models/`.
 
-## 3. Vast.ai deployment architecture
+## 3. Схема для Vast.ai
 
 ```mermaid
 flowchart TB
-    LMS[LMS server / Nginx] -->|AI_NAVIGATION_UPSTREAM=http://vast-host:3001| Vast[Vast.ai instance container]
-
-    subgraph Vast[Vast.ai single container]
-        Start[deploy/vast/start.sh]
-        Start --> LlamaProc[llama.cpp process :8080]
-        Start --> NodeProc[ai-navigation-service process :3001]
-        LlamaProc --> VastModel[(Qwen3-Embedding-4B Q5_K_M in /workspace/models)]
-        NodeProc -->|localhost:8080| LlamaProc
-    end
-
-    Browser[Browser] -->|/api/navigation-search| LMS
+    site[Основной сайт] --> proxy[Прокси /api/navigation-search]
+    proxy --> vast[Vast.ai instance]
+    vast --> api[AI service process]
+    vast --> llama[llama.cpp process]
+    api --> llama
+    llama --> model[Qwen3 Embedding 4B Q5_K_M]
 ```
 
-Vast.ai instances are already containerized, so the recommended Vast mode is one image with two processes instead of Docker-in-Docker.
+Для Vast.ai лучше использовать один контейнер Vast, внутри которого запускаются два процесса: `llama.cpp` и `ai-navigation-service`. Так проще, чем Docker-in-Docker.
 
-## 4. Normal VM deployment architecture
+## 4. Схема для обычной VM или VPS
 
 ```mermaid
 flowchart TB
-    Admin[Deploy script] --> Install[deploy/vm/install-docker.sh]
-    Admin --> Deploy[deploy/vm/deploy-ai-compose.sh]
-
-    Install --> Docker[Docker Engine + Compose]
-    Deploy --> Compose[docker-compose.ai.yml]
-
-    Compose --> AIS[ai-navigation-service container :3001]
-    Compose --> LLAMA[llama.cpp embedding container :8080]
-    LLAMA --> Model[(models/qwen3-embedding-4b-q5_k_m.gguf)]
-    AIS --> LLAMA
-
-    Deploy --> Env[ai-navigation-upstream.env]
-    Env -->|AI_NAVIGATION_UPSTREAM=http://AI_HOST:3001| LMSProxy[LMS Nginx proxy]
+    vm[Ubuntu VM или VPS] --> compose[Docker Compose]
+    compose --> api[Контейнер ai-navigation-service]
+    compose --> llama[Контейнер llama.cpp]
+    api --> llama
+    llama --> model[Модель Q5_K_M]
+    deploy[deploy/vm/deploy-ai-compose.sh] --> compose
+    deploy --> env[AI_NAVIGATION_UPSTREAM]
 ```
 
-This is the recommended mode for an ordinary VPS or private VM where Docker can run normally.
+На обычной VM используется привычный вариант с двумя Docker-контейнерами. Скрипт деплоя поднимает compose и выводит переменную `AI_NAVIGATION_UPSTREAM`, которую нужно указать в nginx/proxy основного сайта.
 
-## 5. Frontend request flow
+## 5. Как проходит запрос пользователя
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Vue as Vue NavigationSearch.vue
-    participant Nginx as LMS Nginx / Vite proxy
-    participant API as AI Navigation Service
-    participant Llama as llama.cpp embeddings
+    participant U as Пользователь
+    participant F as Frontend
+    participant P as Прокси сайта
+    participant A as AI service
+    participant L as llama.cpp
 
-    User->>Vue: Types query after login
-    Vue->>Vue: Debounce input
-    Vue->>Nginx: POST /api/navigation-search
-    Nginx->>API: Proxy request
-    API->>API: Normalize query
-    API->>API: Check exact aliases
-    alt exact match
-        API-->>Nginx: action=redirect
-    else semantic search needed
-        API->>Llama: POST /v1/embeddings
-        Llama-->>API: query embedding
-        API->>API: keyword scoring
-        API->>API: vector scoring
-        API->>API: hybrid scoring
-        API->>API: decision thresholds
-        API-->>Nginx: redirect / suggest / fallback
-    end
-    Nginx-->>Vue: JSON result
-    alt redirect
-        Vue->>Vue: router.push(target.url)
-    else suggest
-        Vue->>User: Show smooth suggestions panel
-    else fallback
-        Vue->>User: Show fallback message
+    U->>F: Вводит запрос
+    F->>F: debounce
+    F->>P: POST /api/navigation-search
+    P->>A: Передаёт запрос
+    A->>A: Нормализация и exact match
+    alt Найден точный alias
+        A-->>F: redirect
+    else Нужен семантический поиск
+        A->>L: Запрос embedding
+        L-->>A: Вектор запроса
+        A->>A: Keyword + Vector + Hybrid scoring
+        A-->>F: redirect или suggest или fallback
     end
 ```
 
-## 6. Search pipeline and filters
+Frontend не вызывает `llama.cpp` напрямую. Вся AI-логика скрыта за одним API.
+
+## 6. Алгоритм поиска
 
 ```mermaid
 flowchart TD
-    Q[Raw user query] --> N[Normalize query]
-    N --> N1[trim]
-    N --> N2[lowercase]
-    N --> N3[replace ё with е]
-    N --> N4[remove punctuation]
-    N --> N5[collapse spaces]
-    N --> N6[max query length]
-
-    N --> Empty{Empty query?}
-    Empty -->|yes| FB0[fallback: ask to enter query]
-    Empty -->|no| Exact[Exact / alias match]
-
-    Exact --> EFields[Compare normalized query with card id, url, title, aliases]
-    EFields --> ExactHit{Exact hit?}
-    ExactHit -->|yes| RedirectExact[redirect, score=1]
-    ExactHit -->|no| Emb[Create query embedding]
-
-    Emb --> Vector[Vector search over in-memory card embeddings]
-    N --> Keyword[Keyword scoring]
-
-    Keyword --> KFields[title, breadcrumbs, description, aliases, keywords]
-    Keyword --> KScore[matched query tokens / query tokens]
-    Vector --> VScore[cosine similarity]
-
-    KScore --> Hybrid[Hybrid score]
-    VScore --> Hybrid
-    Hybrid --> Formula[final_score = vector*0.7 + keyword*0.3 + priority_boost]
-
-    Formula --> Sort[Sort candidates by final_score desc]
-    Sort --> Decision{Decision}
-
-    Decision -->|top1 >= 0.82 and gap >= 0.08| Redirect[redirect]
-    Decision -->|top1 >= 0.62| Suggest[suggest top 5]
-    Decision -->|otherwise| Fallback[fallback]
+    q[Запрос пользователя] --> n[Нормализация]
+    n --> exact[Проверка title, aliases, keywords, url]
+    exact --> hit{Точное совпадение?}
+    hit -->|да| redirect[redirect]
+    hit -->|нет| emb[Embedding запроса]
+    emb --> vector[Vector search]
+    n --> keyword[Keyword scoring]
+    vector --> hybrid[Hybrid score]
+    keyword --> hybrid
+    hybrid --> decision{Решение}
+    decision -->|высокий score и gap| redirect
+    decision -->|средний score| suggest[suggestions]
+    decision -->|низкий score| fallback[fallback]
 ```
 
-## 7. Index build flow
+Сначала всегда проверяются простые точные совпадения. Это быстрее и надёжнее для запросов вроде `войти`, `регистрация`, `оценки`. Если точного совпадения нет, используется embedding-поиск.
 
-```mermaid
-flowchart TD
-    Cards[ai-navigation-service/data/cards.ru.json] --> ActiveFilter[Filter is_active=true]
-    ActiveFilter --> CardText[Build embedding text per card]
-
-    CardText --> TextTemplate[Section, URL, description, aliases, breadcrumbs, keywords]
-    TextTemplate --> Llama[llama.cpp /v1/embeddings]
-    Llama --> Embeddings[Normalized embedding vectors]
-    Embeddings --> MemoryIndex[(In-memory index)]
-
-    ActiveFilter --> ExactMap[Exact lookup values]
-    ActiveFilter --> KeywordCorpus[Keyword searchable text]
-
-    ExactMap --> Runtime[Runtime search]
-    KeywordCorpus --> Runtime
-    MemoryIndex --> Runtime
-```
-
-The service does not embed Vue components, HTML, passwords, tokens, or private user data. Only curated search cards are embedded.
-
-## 8. Data model for a search card
-
-```mermaid
-classDiagram
-    class SearchCard {
-        string id
-        string url
-        string title
-        string breadcrumbs
-        string description
-        string[] aliases
-        string[] keywords
-        number priority
-        boolean is_active
-        string[] roles
-    }
-
-    class IndexedCard {
-        SearchCard card
-        number[] embedding
-        string embeddingText
-    }
-
-    SearchCard --> IndexedCard
-```
-
-Current initial cards are login, register, dashboard, courses, assignments, grades, profile, and help.
-
-## 9. Models and runtime components
+## 7. Какие данные участвуют в поиске
 
 ```mermaid
 flowchart LR
-    subgraph Models
-        M1[Qwen3-Embedding-4B GGUF Q5_K_M]
-    end
-
-    subgraph Runtime
-        L[llama.cpp server]
-        A[ai-navigation-service Node.js]
-    end
-
-    subgraph SearchLogic
-        F1[Exact alias filter]
-        F2[Keyword token filter]
-        F3[Vector cosine similarity]
-        F4[Priority boost]
-        F5[Threshold decision]
-    end
-
-    M1 --> L
-    L --> F3
-    A --> F1
-    A --> F2
-    A --> F3
-    A --> F4
-    A --> F5
+    card[Search Card] --> title[title]
+    card --> aliases[aliases]
+    card --> keywords[keywords]
+    card --> desc[description]
+    card --> crumbs[breadcrumbs]
+    card --> url[url]
+    card --> priority[priority]
 ```
 
-There is no reranker in the MVP. There is no generative chat model. The embedding model is used only for semantic navigation search.
+В модель не отправляются Vue-компоненты, HTML, пароли, токены или личные данные. В embedding уходит только заранее подготовленное описание раздела из `cards.ru.json`.
 
-## 10. Scoring and thresholds
+## 8. Как строится индекс
 
 ```mermaid
 flowchart TD
-    Scores[Candidate scores] --> VectorWeight[vector_score * 0.7]
-    Scores --> KeywordWeight[keyword_score * 0.3]
-    Scores --> Priority[priority * 0.05]
-
-    VectorWeight --> Final[final_score]
-    KeywordWeight --> Final
-    Priority --> Final
-
-    Final --> Top[Top candidates]
-    Top --> RedirectRule{top1 >= 0.82 and top1-top2 >= 0.08?}
-    RedirectRule -->|yes| R[redirect]
-    RedirectRule -->|no| SuggestRule{top1 >= 0.62?}
-    SuggestRule -->|yes| S[suggest]
-    SuggestRule -->|no| F[fallback]
+    cards[cards.ru.json] --> active[Фильтр is_active=true]
+    active --> text[Текст для embedding]
+    text --> llama[llama.cpp embeddings]
+    llama --> index[Векторы в памяти сервиса]
+    active --> exact[Справочник exact/alias]
+    active --> keyword[Текст для keyword scoring]
 ```
 
-Default values are configurable through environment variables:
+Сейчас индекс хранится в памяти сервиса. Для MVP этого достаточно, потому что карточек разделов мало. Позже это можно заменить на Qdrant, FAISS, pgvector или SQLite без изменения frontend API.
 
-```env
-VECTOR_WEIGHT=0.7
-KEYWORD_WEIGHT=0.3
-PRIORITY_WEIGHT=0.05
-T_REDIRECT=0.82
-T_GAP=0.08
-T_SUGGEST=0.62
-SUGGESTIONS_COUNT=5
+## 9. Модель и компоненты
+
+```mermaid
+flowchart TB
+    model[Qwen3 Embedding 4B GGUF Q5_K_M]
+    llama[llama.cpp server]
+    api[Node.js ai-navigation-service]
+    ui[Vue NavigationSearch]
+
+    model --> llama
+    llama --> api
+    api --> ui
 ```
 
-## 11. Auth-related UI behavior
+В MVP нет чат-бота, генерации ответов и reranker. Используется только embedding-модель для поиска подходящего раздела LMS.
+
+## 10. Фильтры и scoring
+
+```mermaid
+flowchart TD
+    exact[Exact match] --> final[Итоговое решение]
+    keyword[Keyword score] --> score[Hybrid score]
+    vector[Vector score] --> score
+    priority[Priority boost] --> score
+    score --> final
+```
+
+Основные фильтры и оценки такие:
+
+```text
+Exact match: id, url, title, aliases
+Keyword score: title, breadcrumbs, description, aliases, keywords
+Vector score: cosine similarity по embeddings
+Priority boost: небольшой бонус важным разделам
+```
+
+Формула:
+
+```text
+final_score = vector_score * 0.7 + keyword_score * 0.3 + priority_boost
+```
+
+Пороговые значения:
+
+```text
+redirect: score >= 0.82 и gap >= 0.08
+suggest:  score >= 0.62
+fallback: всё ниже suggest-порога
+```
+
+## 11. Поведение в интерфейсе
 
 ```mermaid
 stateDiagram-v2
     [*] --> Guest
-    Guest --> Authenticated: login() in mock auth state
-    Authenticated --> Guest: logout()
-
-    Guest: Search bar hidden
-    Authenticated: Search bar visible
-    Authenticated: NavigationSearch can query /api/navigation-search
+    Guest --> Authenticated: Вход
+    Authenticated --> Guest: Выход
+    Guest: Поиск скрыт
+    Authenticated: Поиск показан
 ```
 
-Current authentication is only a frontend mock using `localStorage`. Real auth/backend integration is not implemented yet.
+Сейчас авторизация временная и хранится во frontend через `localStorage`. До входа строка поиска скрыта. После входа она появляется.
 
-## 12. Deployment output and proxy variable
+## 12. Как сайт узнаёт адрес AI
 
 ```mermaid
 flowchart LR
-    Deploy[AI autodeploy: Vast or VM] --> Upstream[AI_NAVIGATION_UPSTREAM=http://AI_HOST:3001]
-    Upstream --> LMSNginx[LMS nginx config]
-    LMSNginx --> BrowserAPI[Browser uses /api/navigation-search]
-
-    Direct[VITE_AI_NAVIGATION_URL] -. normally empty .-> BrowserAPI
+    deploy[Деплой AI] --> upstream[AI_NAVIGATION_UPSTREAM]
+    upstream --> nginx[Nginx сайта]
+    browser[Браузер] --> sameorigin[/api/navigation-search]
+    sameorigin --> nginx
+    nginx --> ai[AI service]
 ```
 
-The preferred production setup keeps `VITE_AI_NAVIGATION_URL` empty and uses same-origin proxying. This avoids CORS and lets the AI host change without rebuilding the frontend.
+При деплое AI-инфраструктуры получается адрес вида:
+
+```env
+AI_NAVIGATION_UPSTREAM=http://AI_HOST:3001
+```
+
+Этот адрес нужен серверу сайта или nginx. В браузер его лучше не отдавать. Frontend продолжает ходить на относительный путь `/api/navigation-search`.
