@@ -1,0 +1,20 @@
+#cloud-config
+users:
+  - name: mospli
+    groups: users, admin, sudo, docker
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: false
+    plain_text_passwd: mospli
+ssh_pwauth: true
+package_update: true
+packages:
+  - openssh-server
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+runcmd:
+  - systemctl enable --now ssh
+  - mkdir -p /home/mospli/MOSPOLI_LMS
+  - chown -R mospli:mospli /home/mospli/MOSPOLI_LMS

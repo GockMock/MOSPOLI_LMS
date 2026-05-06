@@ -36,16 +36,19 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuth } from '../composables/useAuth'
 import '@material/web/textfield/outlined-text-field.js'
 import '@material/web/button/filled-button.js'
 
 const router = useRouter()
+const { login } = useAuth()
 
 const email = ref('')
 const password = ref('')
 
 const handleLogin = () => {
   console.log('Login attempt:', { email: email.value })
+  login()
   router.push('/dashboard')
 }
 </script>

@@ -1,13 +1,16 @@
 <template>
-  <v-app>
-    <v-main>
-      <router-view />
-    </v-main>
-  </v-app>
+  <NavigationSearch v-if="isAuthenticated" />
+  <main>
+    <router-view />
+  </main>
 </template>
 
 <script setup lang="ts">
 import '@material/web/all.js'
+import NavigationSearch from './components/NavigationSearch.vue'
+import { useAuth } from './composables/useAuth'
+
+const { isAuthenticated } = useAuth()
 </script>
 
 <style>
